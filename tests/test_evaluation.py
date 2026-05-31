@@ -15,6 +15,7 @@ from aidetector.evaluation import (
     group_prediction_rows,
     roc_auc,
     search_hybrid_weight_threshold,
+    search_threshold,
     split_samples_balanced,
 )
 from aidetector.types import DetectionResult
@@ -191,3 +192,13 @@ def test_group_prediction_rows_against_reference_builds_binary_slices():
     assert grouped["SD14"]["accuracy"] == 1.0
     assert grouped["SD14"]["n_real"] == 2
     assert grouped["SD14"]["n_ai"] == 2
+
+
+def test_search_threshold_supports_f1_objective():
+    y_true = [0, 0, 1, 1]
+    y_score = [0.1, 0.2, 0.6, 0.7]
+
+    result = search_threshold(y_true, y_score, objective="f1")
+
+    assert result["threshold"] in {0.6, 0.7}
+    assert result["f1"] == 1.0

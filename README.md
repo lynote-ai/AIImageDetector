@@ -159,9 +159,11 @@ aidetect benchmark-tiny-genimage-local \
   /path/to/validation-00000-of-00004.parquet \
   /path/to/validation-00001-of-00004.parquet \
   /path/to/validation-00002-of-00004.parquet \
-  --backend univfd \
+  /path/to/validation-00003-of-00004.parquet \
+  --backend hybrid \
+  --optimize-metric f1 \
   --max-per-class-per-shard 100 \
-  --output benchmarks/tiny-genimage-univfd-multishard-600.json
+  --output benchmarks/tiny-genimage-hybrid-multishard-800-f1.json
 ```
 
 If Hugging Face dataset metadata requests are flaky, you can work from a local
@@ -208,30 +210,32 @@ Interpretation:
   split, and one local environment.
 - These calibrated runs were executed on CPU in this workspace.
 
-Current strongest local benchmark, calibrated on 3 Tiny-GenImage validation
+Current strongest local benchmark, calibrated on 4 Tiny-GenImage validation
 shards with up to 100 real + 100 fake images sampled per shard:
 
 | Backend | Test N | Test Accuracy | Test Balanced Acc | Precision | Recall | Test F1 | Test ROC AUC |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Hybrid (UnivFD 0.85 + HF 0.15) | 300 | 0.743 | 0.743 | 0.745 | 0.740 | 0.742 | 0.816 |
+| Hybrid (UnivFD 0.85 + HF 0.15), `optimize=f1` | 400 | 0.773 | 0.773 | 0.779 | 0.760 | 0.770 | 0.843 |
+| Hybrid (UnivFD 0.85 + HF 0.15), `optimize=balanced_accuracy` | 400 | 0.745 | 0.745 | 0.802 | 0.650 | 0.718 | 0.843 |
 | UnivFD / CLIP ViT-L/14 | 300 | 0.690 | 0.690 | 0.806 | 0.500 | 0.617 | 0.784 |
 
 Selected generator-vs-real slices from that same held-out split:
 
 | Generator | N | Accuracy | Balanced Acc | F1 | ROC AUC |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| BigGAN vs Real | 172 | 0.773 | 0.851 | 0.519 | 0.945 |
-| ADM vs Real | 173 | 0.775 | 0.852 | 0.530 | 0.968 |
-| VQDM vs Real | 169 | 0.769 | 0.847 | 0.480 | 0.925 |
-| GLIDE vs Real | 172 | 0.738 | 0.714 | 0.400 | 0.760 |
-| SD15 vs Real | 174 | 0.736 | 0.707 | 0.410 | 0.752 |
-| Wukong vs Real | 169 | 0.728 | 0.663 | 0.324 | 0.736 |
-| Midjourney vs Real | 171 | 0.702 | 0.564 | 0.239 | 0.616 |
+| BigGAN vs Real | 231 | 0.810 | 0.876 | 0.577 | 0.962 |
+| ADM vs Real | 232 | 0.810 | 0.877 | 0.585 | 0.974 |
+| VQDM vs Real | 224 | 0.804 | 0.872 | 0.511 | 0.941 |
+| GLIDE vs Real | 227 | 0.775 | 0.744 | 0.427 | 0.805 |
+| Wukong vs Real | 228 | 0.776 | 0.750 | 0.440 | 0.815 |
+| SD15 vs Real | 228 | 0.768 | 0.714 | 0.404 | 0.763 |
+| Midjourney vs Real | 230 | 0.730 | 0.576 | 0.262 | 0.638 |
 
-This is the honest picture: the hybrid model substantially improves the overall
-held-out balance between precision and recall, and it lifts weaker generators
-such as Midjourney and SD15 compared with pure UnivFD. It is still not a
-universal detector guarantee.
+This is the honest picture: switching the calibration objective to `f1` gives us
+the strongest thresholded result so far, with a materially better precision /
+recall balance than pure UnivFD. It also lifts weaker generators such as
+Midjourney and SD15, though they remain much harder than ADM, BigGAN, or VQDM.
+This is still not a universal detector guarantee.
 
 ## Model Weights
 

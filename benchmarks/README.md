@@ -35,12 +35,13 @@ The calibrated JSON files include calibration metrics, test metrics, selected
 thresholds, model metadata, and per-image predictions for both splits. These
 reports were produced on CPU in the current workspace.
 
-Multi-shard calibrated hold-out results currently include 3 validation shards
+Multi-shard calibrated hold-out results currently include 4 validation shards
 with up to 100 real + 100 fake samples exported per shard.
 
 | Report | Backend | Test N | Test Accuracy | Test Balanced Acc | Precision | Recall | Test F1 | Test ROC AUC |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `tiny-genimage-hybrid-multishard-600.json` | Hybrid (UnivFD 0.85 + HF 0.15) | 300 | 0.743 | 0.743 | 0.745 | 0.740 | 0.742 | 0.816 |
+| `tiny-genimage-hybrid-multishard-800-f1.json` | Hybrid (UnivFD 0.85 + HF 0.15), `optimize=f1` | 400 | 0.773 | 0.773 | 0.779 | 0.760 | 0.770 | 0.843 |
+| `tiny-genimage-hybrid-multishard-800.json` | Hybrid (UnivFD 0.85 + HF 0.15), `optimize=balanced_accuracy` | 400 | 0.745 | 0.745 | 0.802 | 0.650 | 0.718 | 0.843 |
 | `tiny-genimage-univfd-multishard-600.json` | UnivFD / CLIP ViT-L/14 | 300 | 0.690 | 0.690 | 0.806 | 0.500 | 0.617 | 0.784 |
 
 This report also includes:

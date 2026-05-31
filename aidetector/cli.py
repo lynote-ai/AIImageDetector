@@ -39,6 +39,7 @@ from .types import DetectionResult, EvaluationReport
 
 app = typer.Typer(help="Simple AI-generated image detector powered by UnivFD/CLIP.")
 console = Console()
+VALID_OPTIMIZE_METRICS = {"balanced_accuracy", "f1", "recall", "precision"}
 
 
 @app.command()
@@ -225,10 +226,21 @@ def benchmark_calibrated_folder_command(
         max=0.5,
         help="Grid step for hybrid weight search during calibration.",
     ),
+    optimize_metric: str = typer.Option(
+        "balanced_accuracy",
+        help="Calibration objective: balanced_accuracy, f1, recall, or precision.",
+    ),
+    min_recall: Optional[float] = typer.Option(
+        None,
+        min=0.0,
+        max=1.0,
+        help="Optional minimum calibration recall constraint for threshold search.",
+    ),
     batch_size: int = typer.Option(16, min=1, help="Batch size for inference."),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write JSON calibration benchmark report."),
 ) -> None:
     """Calibrate threshold on a held-out split, then evaluate on a disjoint test split."""
+    _validate_optimize_metric(optimize_metric)
     samples = collect_folder_samples(
         root,
         real_dir=real_dir,
@@ -256,6 +268,8 @@ def benchmark_calibrated_folder_command(
         hf_model=hf_model,
         hybrid_univfd_weight=hybrid_univfd_weight,
         hybrid_alpha_step=hybrid_alpha_step,
+        optimize_metric=optimize_metric,
+        min_recall=min_recall,
         batch_size=batch_size,
         dataset_info={
             "kind": "folder-calibrated",
@@ -315,10 +329,21 @@ def benchmark_tiny_genimage_local_command(
         max=0.5,
         help="Grid step for hybrid weight search during calibration.",
     ),
+    optimize_metric: str = typer.Option(
+        "balanced_accuracy",
+        help="Calibration objective: balanced_accuracy, f1, recall, or precision.",
+    ),
+    min_recall: Optional[float] = typer.Option(
+        None,
+        min=0.0,
+        max=1.0,
+        help="Optional minimum calibration recall constraint for threshold search.",
+    ),
     batch_size: int = typer.Option(16, min=1, help="Batch size for inference."),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write JSON report."),
 ) -> None:
     """Benchmark one or more local Tiny-GenImage parquet shards with per-generator summaries."""
+    _validate_optimize_metric(optimize_metric)
     generator_filter = None
     if generators:
         generator_filter = {value.strip() for value in generators.split(",") if value.strip()}
@@ -348,6 +373,8 @@ def benchmark_tiny_genimage_local_command(
         hf_model=hf_model,
         hybrid_univfd_weight=hybrid_univfd_weight,
         hybrid_alpha_step=hybrid_alpha_step,
+        optimize_metric=optimize_metric,
+        min_recall=min_recall,
         batch_size=batch_size,
         dataset_info={
             "kind": "tiny-genimage-local",
@@ -610,6 +637,8 @@ def _run_calibrated_folder_benchmark(
     hf_model: str,
     hybrid_univfd_weight: float,
     hybrid_alpha_step: float,
+    optimize_metric: str,
+    min_recall: Optional[float],
     batch_size: int,
     dataset_info: dict[str, Any],
     group_fields: tuple[str, ...] = (),
@@ -641,6 +670,8 @@ def _run_calibrated_folder_benchmark(
             calibration_univfd.y_score,
             calibration_hf.y_score,
             alpha_step=hybrid_alpha_step,
+            objective=optimize_metric,
+            min_recall=min_recall,
         )
         selected_weight = float(search["univfd_weight"] or hybrid_univfd_weight)
         selected_threshold = float(search["threshold"] or threshold)
@@ -687,6 +718,8 @@ def _run_calibrated_folder_benchmark(
             "selected_threshold": selected_threshold,
             "selected_univfd_weight": selected_weight,
             "search_alpha_step": hybrid_alpha_step,
+            "optimize_metric": optimize_metric,
+            "min_recall": min_recall,
             "components": {
                 "univfd": univfd_detector.model_info(),
                 "hf": hf_detector.model_info(),
@@ -705,7 +738,12 @@ def _run_calibrated_folder_benchmark(
             hybrid_univfd_weight=hybrid_univfd_weight,
         )
         calibration_run = collect_predictions(detector, calibration_samples, batch_size=batch_size)
-        search = search_threshold(calibration_run.y_true, calibration_run.y_score)
+        search = search_threshold(
+            calibration_run.y_true,
+            calibration_run.y_score,
+            objective=optimize_metric,
+            min_recall=min_recall,
+        )
         selected_threshold = float(search["threshold"] or threshold)
         test_run = collect_predictions(detector, test_samples, batch_size=batch_size)
         calibration_metrics = compute_metrics(
@@ -734,7 +772,11 @@ def _run_calibrated_folder_benchmark(
             threshold=selected_threshold,
             backend=backend,
         )
-        model = detector.model_info() | {"selected_threshold": selected_threshold}
+        model = detector.model_info() | {
+            "selected_threshold": selected_threshold,
+            "optimize_metric": optimize_metric,
+            "min_recall": min_recall,
+        }
         search_summary = search
 
     report = {
@@ -822,6 +864,13 @@ def _class_label_name(value, names: list[str] | None) -> str:
 
 def _safe_name(value: str) -> str:
     return "".join(character if character.isalnum() or character in "-_" else "-" for character in value)
+
+
+def _validate_optimize_metric(value: str) -> None:
+    if value not in VALID_OPTIMIZE_METRICS:
+        raise typer.BadParameter(
+            f"Unsupported optimize metric: {value!r}. Choose from {sorted(VALID_OPTIMIZE_METRICS)}."
+        )
 
 
 if __name__ == "__main__":

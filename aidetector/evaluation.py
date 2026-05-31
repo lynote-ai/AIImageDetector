@@ -428,6 +428,16 @@ def split_samples_balanced(
 
 
 def best_threshold_metrics(y_true: Sequence[int], y_score: Sequence[float]) -> dict[str, float | None]:
+    return search_threshold(y_true, y_score, objective="balanced_accuracy")
+
+
+def search_threshold(
+    y_true: Sequence[int],
+    y_score: Sequence[float],
+    *,
+    objective: str = "balanced_accuracy",
+    min_recall: float | None = None,
+) -> dict[str, float | None]:
     if not y_true:
         return {"threshold": None, "accuracy": None, "balanced_accuracy": None, "f1": None}
 
@@ -449,27 +459,34 @@ def best_threshold_metrics(y_true: Sequence[int], y_score: Sequence[float]) -> d
         balanced_accuracy = (recall + specificity) / 2
         precision = _safe_div(tp, tp + fp)
         f1 = _safe_div(2 * precision * recall, precision + recall)
-        candidate = (balanced_accuracy, accuracy, f1)
+        if min_recall is not None and recall < min_recall:
+            continue
+        candidate = _objective_tuple(
+            objective=objective,
+            accuracy=accuracy,
+            balanced_accuracy=balanced_accuracy,
+            precision=precision,
+            recall=recall,
+            f1=f1,
+        )
         incumbent = (
             float(best["balanced_accuracy"] or -1.0),
             float(best["accuracy"] or -1.0),
             float(best["f1"] or -1.0),
-        )
+            -1.0,
+        ) if objective == "balanced_accuracy" and min_recall is None else best.get("_candidate", (-1.0, -1.0, -1.0, -1.0))
         if candidate > incumbent:
             best = {
                 "threshold": threshold,
                 "accuracy": accuracy,
                 "balanced_accuracy": balanced_accuracy,
                 "f1": f1,
+                "precision": precision,
+                "recall": recall,
+                "_candidate": candidate,
             }
+    best.pop("_candidate", None)
     return best
-
-
-def search_threshold(
-    y_true: Sequence[int],
-    y_score: Sequence[float],
-) -> dict[str, float | None]:
-    return best_threshold_metrics(y_true, y_score)
 
 
 def search_hybrid_weight_threshold(
@@ -478,6 +495,8 @@ def search_hybrid_weight_threshold(
     hf_scores: Sequence[float],
     *,
     alpha_step: float = 0.05,
+    objective: str = "balanced_accuracy",
+    min_recall: float | None = None,
 ) -> dict[str, float | None]:
     if len(y_true) != len(univfd_scores) or len(y_true) != len(hf_scores):
         raise ValueError("All sequences must have the same length")
@@ -498,17 +517,26 @@ def search_hybrid_weight_threshold(
             alpha * univfd_score + (1.0 - alpha) * hf_score
             for univfd_score, hf_score in zip(univfd_scores, hf_scores, strict=True)
         ]
-        threshold_metrics = best_threshold_metrics(y_true, combined_scores)
-        candidate = (
-            float(threshold_metrics["balanced_accuracy"] or -1.0),
-            float(threshold_metrics["accuracy"] or -1.0),
-            float(threshold_metrics["f1"] or -1.0),
+        threshold_metrics = search_threshold(
+            y_true,
+            combined_scores,
+            objective=objective,
+            min_recall=min_recall,
+        )
+        candidate = _objective_tuple(
+            objective=objective,
+            accuracy=float(threshold_metrics["accuracy"] or -1.0),
+            balanced_accuracy=float(threshold_metrics["balanced_accuracy"] or -1.0),
+            precision=float(threshold_metrics.get("precision") or -1.0),
+            recall=float(threshold_metrics.get("recall") or -1.0),
+            f1=float(threshold_metrics["f1"] or -1.0),
         )
         incumbent = (
             float(best["balanced_accuracy"] or -1.0),
             float(best["accuracy"] or -1.0),
             float(best["f1"] or -1.0),
-        )
+            -1.0,
+        ) if objective == "balanced_accuracy" and min_recall is None else best.get("_candidate", (-1.0, -1.0, -1.0, -1.0))
         if candidate > incumbent:
             best = {
                 "univfd_weight": alpha,
@@ -516,7 +544,11 @@ def search_hybrid_weight_threshold(
                 "accuracy": threshold_metrics["accuracy"],
                 "balanced_accuracy": threshold_metrics["balanced_accuracy"],
                 "f1": threshold_metrics["f1"],
+                "precision": threshold_metrics.get("precision"),
+                "recall": threshold_metrics.get("recall"),
+                "_candidate": candidate,
             }
+    best.pop("_candidate", None)
     return best
 
 
@@ -678,3 +710,21 @@ def _class_name(index: int, names: list[str] | None) -> str:
     if names is not None and 0 <= index < len(names):
         return str(names[index])
     return str(index)
+
+
+def _objective_tuple(
+    *,
+    objective: str,
+    accuracy: float,
+    balanced_accuracy: float,
+    precision: float,
+    recall: float,
+    f1: float,
+) -> tuple[float, float, float, float]:
+    if objective == "f1":
+        return (f1, balanced_accuracy, accuracy, recall)
+    if objective == "recall":
+        return (recall, balanced_accuracy, f1, accuracy)
+    if objective == "precision":
+        return (precision, balanced_accuracy, f1, accuracy)
+    return (balanced_accuracy, accuracy, f1, -abs(precision - recall))
